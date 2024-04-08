@@ -88,8 +88,8 @@ class SimpleTiledModel : Model
                 b = i => i;
             }
 
-            T = action.Count;
-            firstOccurrence.Add(tilename, T);
+            patternCount = action.Count;
+            firstOccurrence.Add(tilename, patternCount);
 
             int[][] map = new int[cardinality][];
             for (int t = 0; t < cardinality; t++)
@@ -105,7 +105,7 @@ class SimpleTiledModel : Model
                 map[t][6] = b(a(a(t)));
                 map[t][7] = b(a(a(a(t))));
 
-                for (int s = 0; s < 8; s++) map[t][s] += T;
+                for (int s = 0; s < 8; s++) map[t][s] += patternCount;
 
                 action.Add(map[t]);
             }
@@ -129,8 +129,8 @@ class SimpleTiledModel : Model
 
                 for (int t = 1; t < cardinality; t++)
                 {
-                    if (t <= 3) tiles.Add(rotate(tiles[T + t - 1], tilesize));
-                    if (t >= 4) tiles.Add(reflect(tiles[T + t - 4], tilesize));
+                    if (t <= 3) tiles.Add(rotate(tiles[patternCount + t - 1], tilesize));
+                    if (t >= 4) tiles.Add(reflect(tiles[patternCount + t - 4], tilesize));
                     tilenames.Add($"{tilename} {t}");
                 }
             }
@@ -138,16 +138,16 @@ class SimpleTiledModel : Model
             for (int t = 0; t < cardinality; t++) weightList.Add(xtile.Get("weight", 1.0));
         }
 
-        T = action.Count;
+        patternCount = action.Count;
         weights = weightList.ToArray();
 
-        propagator = new int[4][][];
+        matchingPatternsInDir = new int[4][][];
         var densePropagator = new bool[4][][];
         for (int d = 0; d < 4; d++)
         {
-            densePropagator[d] = new bool[T][];
-            propagator[d] = new int[T][];
-            for (int t = 0; t < T; t++) densePropagator[d][t] = new bool[T];
+            densePropagator[d] = new bool[patternCount][];
+            matchingPatternsInDir[d] = new int[patternCount][];
+            for (int t = 0; t < patternCount; t++) densePropagator[d][t] = new bool[patternCount];
         }
 
         foreach (XElement xneighbor in xroot.Element("neighbors").Elements("neighbor"))
@@ -171,7 +171,7 @@ class SimpleTiledModel : Model
             densePropagator[1][action[D][2]][action[U][2]] = true;
         }
 
-        for (int t2 = 0; t2 < T; t2++) for (int t1 = 0; t1 < T; t1++)
+        for (int t2 = 0; t2 < patternCount; t2++) for (int t1 = 0; t1 < patternCount; t1++)
             {
                 densePropagator[2][t2][t1] = densePropagator[0][t1][t2];
                 densePropagator[3][t2][t1] = densePropagator[1][t1][t2];
@@ -180,53 +180,53 @@ class SimpleTiledModel : Model
         List<int>[][] sparsePropagator = new List<int>[4][];
         for (int d = 0; d < 4; d++)
         {
-            sparsePropagator[d] = new List<int>[T];
-            for (int t = 0; t < T; t++) sparsePropagator[d][t] = new List<int>();
+            sparsePropagator[d] = new List<int>[patternCount];
+            for (int t = 0; t < patternCount; t++) sparsePropagator[d][t] = new List<int>();
         }
 
-        for (int d = 0; d < 4; d++) for (int t1 = 0; t1 < T; t1++)
+        for (int d = 0; d < 4; d++) for (int t1 = 0; t1 < patternCount; t1++)
             {
                 List<int> sp = sparsePropagator[d][t1];
                 bool[] tp = densePropagator[d][t1];
 
-                for (int t2 = 0; t2 < T; t2++) if (tp[t2]) sp.Add(t2);
+                for (int t2 = 0; t2 < patternCount; t2++) if (tp[t2]) sp.Add(t2);
 
                 int ST = sp.Count;
                 if (ST == 0) Console.WriteLine($"ERROR: tile {tilenames[t1]} has no neighbors in direction {d}");
-                propagator[d][t1] = new int[ST];
-                for (int st = 0; st < ST; st++) propagator[d][t1][st] = sp[st];
+                matchingPatternsInDir[d][t1] = new int[ST];
+                for (int st = 0; st < ST; st++) matchingPatternsInDir[d][t1][st] = sp[st];
             }
     }
 
     public override void Save(string filename)
     {
-        int[] bitmapData = new int[MX * MY * tilesize * tilesize];
+        int[] bitmapData = new int[outputWidth * outputHeight * tilesize * tilesize];
         if (observed[0] >= 0)
         {
-            for (int x = 0; x < MX; x++) for (int y = 0; y < MY; y++)
+            for (int x = 0; x < outputWidth; x++) for (int y = 0; y < outputHeight; y++)
                 {
-                    int[] tile = tiles[observed[x + y * MX]];
+                    int[] tile = tiles[observed[x + y * outputWidth]];
                     for (int dy = 0; dy < tilesize; dy++) for (int dx = 0; dx < tilesize; dx++)
-                            bitmapData[x * tilesize + dx + (y * tilesize + dy) * MX * tilesize] = tile[dx + dy * tilesize];
+                            bitmapData[x * tilesize + dx + (y * tilesize + dy) * outputWidth * tilesize] = tile[dx + dy * tilesize];
                 }
         }
         else
         {
-            for (int i = 0; i < wave.Length; i++)
+            for (int i = 0; i < outputArray.Length; i++)
             {
-                int x = i % MX, y = i / MX;
-                if (blackBackground && sumsOfOnes[i] == T)
+                int x = i % outputWidth, y = i / outputWidth;
+                if (blackBackground && sumsOfOnes[i] == patternCount)
                     for (int yt = 0; yt < tilesize; yt++) for (int xt = 0; xt < tilesize; xt++)
-                            bitmapData[x * tilesize + xt + (y * tilesize + yt) * MX * tilesize] = 255 << 24;
+                            bitmapData[x * tilesize + xt + (y * tilesize + yt) * outputWidth * tilesize] = 255 << 24;
                 else
                 {
-                    bool[] w = wave[i];
+                    bool[] w = outputArray[i];
                     double normalization = 1.0 / sumsOfWeights[i];
                     for (int yt = 0; yt < tilesize; yt++) for (int xt = 0; xt < tilesize; xt++)
                         {
-                            int idi = x * tilesize + xt + (y * tilesize + yt) * MX * tilesize;
+                            int idi = x * tilesize + xt + (y * tilesize + yt) * outputWidth * tilesize;
                             double r = 0, g = 0, b = 0;
-                            for (int t = 0; t < T; t++) if (w[t])
+                            for (int t = 0; t < patternCount; t++) if (w[t])
                                 {
                                     int argb = tiles[t][xt + yt * tilesize];
                                     r += ((argb & 0xff0000) >> 16) * weights[t] * normalization;
@@ -238,15 +238,15 @@ class SimpleTiledModel : Model
                 }
             }
         }
-        BitmapHelper.SaveBitmap(bitmapData, MX * tilesize, MY * tilesize, filename);
+        BitmapHelper.SaveBitmap(bitmapData, outputWidth * tilesize, outputHeight * tilesize, filename);
     }
 
     public string TextOutput()
     {
         var result = new System.Text.StringBuilder();
-        for (int y = 0; y < MY; y++)
+        for (int y = 0; y < outputHeight; y++)
         {
-            for (int x = 0; x < MX; x++) result.Append($"{tilenames[observed[x + y * MX]]}, ");
+            for (int x = 0; x < outputWidth; x++) result.Append($"{tilenames[observed[x + y * outputWidth]]}, ");
             result.Append(Environment.NewLine);
         }
         return result.ToString();
